@@ -79,18 +79,35 @@ class TabItem(TabbedPanelItem):
         self.sub_content = []
         super(TabItem , self).__init__(**kwargs)
 
+class LoopThumbnail(BoxLayout):
+    def __init__(self, thumbnail_image, **kwargs):
+        self.thumbnail_image = thumbnail_image
+        super(LoopThumbnail, self).__init__(**kwargs)
+
+    def on_touch_down(self, touch):
+        if self.thumbnail_image.collide_point(*touch.pos):
+            self.parent.toggle_expand()
+            self.parent.parent.parent.scroll_to(self.parent)
+        return super().on_touch_down(touch)
+
 class LoopItem(BoxLayout):
     # expand on focus?
     def __init__(self, loop, app, **kwargs):
         self.loop = loop
         self.app = app
+        self.is_expanded = False
         self.loop_label = Label(text=loop['uuid'])
-        self.loop_remove = Button(text= "del", size_hint_x=.2, font_size=20, height=44, size_hint_y=None)
+        self.loop_remove = Button(text= "del", width=20, font_size=20, height=44, size_hint_y=None)
         self.loop_remove.bind(on_press= lambda widget: self.remove_loop(widget))
         # some sort of race condition on update_loops?
         duration = float(self.app.sources[self.loop["filehash"]]["duration"])
-        # self.loop_volume = Slider(range=(0, 100), value=v)
-        # self.loop_volume.bind(on_touch_up=lambda widget, touch: self.adjust_loop("volume", round(widget.value)))
+        try:
+            volume = self.app.sources[self.loop["filehash"]]["volume"]
+        except Exception as ex:
+            print(ex)
+            volume = 50
+        self.loop_volume = Slider(range=(0, 100), value=volume)
+        self.loop_volume.bind(on_touch_up=lambda widget, touch: self.adjust_loop("volume", round(widget.value)))
         # need different widgets for more precise selections / adjustments
         # previously had used colored ascii blocks in terminal which worked
         # well: todo vizavizcli
@@ -116,19 +133,41 @@ class LoopItem(BoxLayout):
         self.initialize_settings()
         self.update_loop_settings()
         self.add_settings()
-
-        self.loop_image = Image()
-        self.loop_image.size_hint_x = None
+        self.loop_image = Image(size_hint_x=1)
         super(LoopItem, self).__init__(**kwargs)
-        top = BoxLayout(orientation="horizontal", size_hint_y=None)
-        top.add_widget(self.loop_remove)
+        top = LoopThumbnail(thumbnail_image=self.loop_image, orientation="horizontal", size_hint_y=None)
         top.add_widget(self.loop_image)
+        top.add_widget(self.loop_volume)
+        top.add_widget(self.loop_remove)
 
         self.orientation = "vertical"
         self.add_widget(top)
-        self.add_widget(self.settings_container)
-        self.loop_source_image()
+        # self.add_widget(self.settings_container)
+        self.loop_source_image(height=44)
         self.draw_viewport()
+
+    def toggle_expand(self):
+        if self.is_expanded:
+            self.unexpand()
+        else:
+            self.expand()
+            self.draw_viewport()
+
+    def expand(self):
+        try:
+            self.height = 800
+            self.add_widget(self.settings_container)
+        except Exception as ex:
+            print(ex)
+        self.is_expanded = True
+
+    def unexpand(self):
+        try:
+            self.remove_widget(self.settings_container)
+            self.height = 44
+        except Exception as ex:
+            print(ex)
+        self.is_expanded = False
 
     def add_settings(self):
         for setting_name, setting_value in self.settings.items():
@@ -176,7 +215,7 @@ class LoopItem(BoxLayout):
         # readonly
         self.settings['duration'] = float(self.app.sources[self.loop["filehash"]]["duration"])
 
-    def loop_source_image(self):
+    def loop_source_image(self, height=None, width=None):
         if self.app.sources:
             try:
                 resolution = 1
@@ -192,8 +231,14 @@ class LoopItem(BoxLayout):
                 img.resolution = resolution
 
                 img.allow_stretch = True
+                img.keep_ratio = False
                 img.texture = CoreImage(use_once, ext="jpg").texture
                 img.size = img.texture_size
+                if height:
+                    img.height = height
+
+                if width:
+                    img.width = width
                 # important to set to (None, None) for expected behavior
                 img.size_hint = (None,None)
 
@@ -318,11 +363,10 @@ class LoopContainer(BoxLayout):
 
     def add_loop(self, loop):
         l = LoopItem(loop.copy(), self.app)
-
-        l.height = 800
-        #l.size_hint_y = None
+        l.size_hint_y = None
+        l.height = 44
+        self.height += 800
         self.add_widget(l)
-        self.height += l.height
         self.parent.scroll_to(l)
 
     def remove_loop(self, loop):
@@ -332,6 +376,10 @@ class LoopContainer(BoxLayout):
                     self.remove_widget(loop)
             except AttributeError as ex:
                 pass
+
+    def unexpand_loops(self):
+        for l in self.children:
+            l.unexpand()
 
 class ScatterTextWidget(BoxLayout):
     text_colour = ObjectProperty([1, 0, 0, 1])
@@ -765,7 +813,6 @@ class VzzGuiApp(App):
 
         tab = TabItem(text="loops",root=root)
         tab.tab_name = "loops"
-        # do check for selected_loop to correctly handle
         # passing keyboard events
         tab.sub_content = [loops_layout]
         t = BoxLayout(orientation="horizontal")
