@@ -180,7 +180,7 @@ class LoopItem(BoxLayout):
         if self.app.sources:
             try:
                 resolution = 1
-                image = self.app.sources[self.loop["filehash"]]["resolutions"][resolution]["renders"]["vertical"]
+                image = self.app.sources[self.loop["filehash"]]["maps"]["rgb_map"]["resolutions"][resolution]["renders"]["vertical"]
                 img = self.loop_image
                 # pass use_once to CoreImage
                 use_once = io.BytesIO(image.read())
