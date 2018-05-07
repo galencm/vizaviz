@@ -1,0 +1,9 @@
+#python
+__pycache__/
+*.py[cod]
+.cache
+*.npy
+# redis db
+*.rdb
+# fifos have no extension
+[0-9]*
