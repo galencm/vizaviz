@@ -239,6 +239,30 @@ def create_map(source_image, num_colors):
     im.close()
     return colorlist
 
+def visualize_loop(start, end, duration, resolution, loop_color=None, bg_color=None, cell_width=10, cell_height=10, return_image=False, return_format="PNG"):
+    width = int(duration * resolution * cell_width)
+    height = int(cell_height)
+    if loop_color is None:
+        loop_color = (240, 240, 240, 1)
+    if bg_color is None:
+        bg_color = (50, 50, 50, 0)
+    visualization_image = Image.new("RGB", (width, height), bg_color)
+    draw = ImageDraw.Draw(visualization_image)
+    draw.rectangle(((int(start)), 0,
+                    (int(end * cell_width * resolution), 0 + cell_height)),
+                    fill=(loop_color))
+
+    if return_image:
+        image_bytes = io.BytesIO()
+        visualization_image.save(image_bytes, return_format)
+        visualization_image.close()
+        image_bytes.seek(0)
+        return image_bytes
+    else:
+        visualization_image.show()
+
+
+
 #@functools.lru_cache(maxsize=32)
 def visualize_map(map_file=None, map_raw=None, cell_width=10, cell_height=10, rows=None, columns=None, resolution=None, return_image=False, return_format="PNG", reverse_image=False):
     if map_file:

@@ -9,7 +9,7 @@ import argparse
 import io
 import math
 import uuid
-from vizaviz import visualize_map
+from vizaviz import visualize_map, visualize_loop
 import bindings
 from kivy.config import Config
 Config.set('graphics', 'width',  1600)
@@ -80,14 +80,15 @@ class TabItem(TabbedPanelItem):
         super(TabItem , self).__init__(**kwargs)
 
 class LoopThumbnail(BoxLayout):
-    def __init__(self, thumbnail_image, **kwargs):
-        self.thumbnail_image = thumbnail_image
+    def __init__(self, thumbnail_images, **kwargs):
+        self.thumbnail_images = thumbnail_images
         super(LoopThumbnail, self).__init__(**kwargs)
 
     def on_touch_down(self, touch):
-        if self.thumbnail_image.collide_point(*touch.pos):
-            self.parent.toggle_expand()
-            self.parent.parent.parent.scroll_to(self.parent)
+        for img in self.thumbnail_images:
+            if img.collide_point(*touch.pos):
+                self.parent.toggle_expand()
+                self.parent.parent.parent.scroll_to(self.parent)
         return super().on_touch_down(touch)
 
 class LoopItem(BoxLayout):
@@ -100,7 +101,7 @@ class LoopItem(BoxLayout):
         self.loop_remove = Button(text= "del", width=20, font_size=20, height=44, size_hint_y=None)
         self.loop_remove.bind(on_press= lambda widget: self.remove_loop(widget))
         # some sort of race condition on update_loops?
-        duration = float(self.app.sources[self.loop["filehash"]]["duration"])
+        self.duration = float(self.app.sources[self.loop["filehash"]]["duration"])
         try:
             volume = self.app.sources[self.loop["filehash"]]["volume"]
         except Exception as ex:
@@ -133,17 +134,22 @@ class LoopItem(BoxLayout):
         self.initialize_settings()
         self.update_loop_settings()
         self.add_settings()
-        self.loop_image = Image(size_hint_x=1)
+        self.loop_source_thumb = Image(size_hint_x=1)
+        self.loop_loop_thumb = Image(size_hint_x=1)
         super(LoopItem, self).__init__(**kwargs)
-        top = LoopThumbnail(thumbnail_image=self.loop_image, orientation="horizontal", size_hint_y=None)
-        top.add_widget(self.loop_image)
+        top = LoopThumbnail(thumbnail_images=[self.loop_source_thumb, self.loop_loop_thumb], orientation="horizontal", size_hint_y=None)
+        loop_stack = BoxLayout(orientation="vertical")
+        loop_stack.add_widget(self.loop_loop_thumb)
+        loop_stack.add_widget(self.loop_source_thumb)
+        top.add_widget(loop_stack)
         top.add_widget(self.loop_volume)
         top.add_widget(self.loop_remove)
 
         self.orientation = "vertical"
         self.add_widget(top)
         # self.add_widget(self.settings_container)
-        self.loop_source_image(height=44)
+        self.loop_source_image(height=22)
+        self.loop_loop_image(height=22)
         self.draw_viewport()
 
     def toggle_expand(self):
@@ -215,12 +221,40 @@ class LoopItem(BoxLayout):
         # readonly
         self.settings['duration'] = float(self.app.sources[self.loop["filehash"]]["duration"])
 
+    def loop_loop_image(self, height=None, width=None):
+        if self.app.sources:
+            try:
+                resolution = 1
+                image = visualize_loop(start=self.settings["loop_start"],
+                                       end=self.settings["loop_end"],
+                                       duration=self.duration,
+                                       resolution=int(resolution),
+                                       cell_width=1,
+                                       return_format="JPEG",
+                                       return_image=True)
+                img = self.loop_loop_thumb
+                img.resolution = resolution
+
+                img.allow_stretch = True
+                img.keep_ratio = False
+                img.texture = CoreImage(image, ext="jpg").texture
+                img.size = img.texture_size
+                if height:
+                    img.height = height
+
+                if width:
+                    img.width = width
+                # important to set to (None, None) for expected behavior
+                img.size_hint = (None,None)
+            except Exception as ex:
+                print(ex)
+
     def loop_source_image(self, height=None, width=None):
         if self.app.sources:
             try:
                 resolution = 1
                 image = self.app.sources[self.loop["filehash"]]["maps"]["rgb_map"]["resolutions"][resolution]["renders"]["vertical"]
-                img = self.loop_image
+                img = self.loop_source_thumb
                 # pass use_once to CoreImage
                 use_once = io.BytesIO(image.read())
                 image.seek(0)
