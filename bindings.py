@@ -67,5 +67,10 @@ def keybindings():
     actions["loops"]["loop_mute"] = [[],[]]
     actions["loops"]["loop_tag"] = [[],[]]
     actions["loops"]["loop_annotate"] = [[],[]]
+    # loops selection
+    actions["loops"]["loops_select_open_next"] = [[],[]]
+    actions["loops"]["loops_select_open_previous"] = [[],[]]
+    actions["loops"]["loops_select_next"] = [[],[]]
+    actions["loops"]["loops_select_next"] = [[],[]]
 
     return actions
