@@ -48,7 +48,7 @@ def despawn_loop(pid):
     process.terminate()
 
 def spawn_loop(file, loop_uuid):
-    fifo_uuid = "/tmp/{}".format(loop_uuid)
+    fifo_uuid = pathlib.PurePath(VIZAVIZ_FIFO_DIR, loop_uuid)
     #fifo = os.mkfifo(fifo_uuid)
     p = subprocess.Popen(["mpv",
                   file,
