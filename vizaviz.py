@@ -266,7 +266,21 @@ def visualize_loop(start, end, duration, resolution, loop_color=None, bg_color=N
     else:
         visualization_image.show()
 
+async def ingest(urls, destination_directory):
+    # try youtube-dl, then wget/curl for other things
+    # use youtube-dl to get potential filename
+    # to see if already downloaded
+    # parse urls? urlparse(url).geturl()
 
+    history_key = "vizaviz:{server_name}:history".format(server_name=SERVER_ID)
+    already_ingested = redis_conn.smembers(history_key)
+    for url in urls:
+        if url not in already_ingested:
+            filename = subprocess.check_output(["youtube-dl", "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/mp4", url, "--get-filename"]).decode().strip()
+            if not os.path.isfile(pathlib.PurePosixPath(destination_directory, filename)):
+                subprocess.Popen(["youtube-dl", "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/mp4", url],
+                                cwd=destination_directory)
+            redis_conn.sadd(history_key, url)
 
 #@functools.lru_cache(maxsize=32)
 def visualize_map(map_file=None, map_raw=None, cell_width=10, cell_height=10, rows=None, columns=None, resolution=None, return_image=False, return_format="PNG", reverse_image=False):
@@ -343,6 +357,17 @@ def file_already_processed(file_hash):
 
     return True
 
+async def ingest_from(check_interval=30):
+    # keychanges should handle most ingest
+    # but this will handle restart of server
+    for key in redis_conn.scan_iter("vizaviz:*ingest".format(server_id=SERVER_ID)):
+        urls = redis_conn.smembers(key)
+        await ingest(urls, VIZAVIZ_SERVER_DIRS[0])
+
+    for count in range(check_interval):
+        print("source from: sleeping {}".format(count))
+        await trio.sleep(1)
+
 async def source_from(directory_name, directory_check_interval, processed_sources):
     p = pathlib.Path(directory_name)
     # include jpg, bmp -- treat as duration 0 -1
@@ -388,6 +413,15 @@ async def handle_key_events(redis_conn, q):
         message = pubsub.get_message()
         if message:
             # print(message)
+            if message["data"] == "sadd" and "ingest" in message["channel"]:
+                # how to handle ingest?
+                # url, tag to specify directory?
+                #   servers could specify which tags to handle
+                #   for example 0101 to put into dir '0101' to structure by date
+                # use a sorted set and timestamps?
+                key = message["channel"].replace("__keyspace@0__:","")
+                urls = redis_conn.smembers(key)
+                await ingest(urls, VIZAVIZ_SERVER_DIRS[0])
             if message["data"] == "del" and "loop" in message["channel"]:
                 loop_key = message["channel"].replace("__keyspace@0__:","")
                 loop_id = message["channel"].split(":")[4]
@@ -419,6 +453,7 @@ async def main(directories, redis_conn):
                 for directory in directories:
                     print("checking directory: {}".format(directory))
                     nursery.start_soon(source_from, directory, directory_check_interval, processed_sources)
+                    nursery.start_soon(ingest_from)
                 sources_from_directory = await q.get()
                 processed_sources.update(sources_from_directory)
                 if processed_sources:
@@ -462,6 +497,8 @@ if __name__ == "__main__":
     parser.add_argument("--config-dir", default=VIZAVIZ_CONFIG_DIR)
 
     args = parser.parse_args()
+
+    VIZAVIZ_SERVER_DIRS = args.source_dir
 
     if args.data_dir != VIZAVIZ_DATA_DIR:
         VIZAVIZ_DATA_DIR = args.data_dir
