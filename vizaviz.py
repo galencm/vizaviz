@@ -17,6 +17,7 @@ import time
 import trio
 import psutil
 import redis
+from xdg import (XDG_CACHE_HOME, XDG_CONFIG_HOME, XDG_DATA_HOME)
 import numpy as np
 from PIL import Image, ImageDraw, ImageShow
 import processors_audio
@@ -28,6 +29,10 @@ np.set_printoptions(threshold=np.inf)
 q = trio.Queue(1)
 COLORMAP_RESOLUTIONS = [1, 4, 8, 16, 32]
 SERVER_ID = "vzz"
+VIZAVIZ_DATA_DIR = pathlib.PurePath(XDG_DATA_HOME, "vizaviz")
+VIZAVIZ_CONFIG_DIR = pathlib.PurePath(XDG_CONFIG_HOME, "vizaviz")
+VIZAVIZ_TEMP_DIR = pathlib.PurePath("/tmp")
+VIZAVIZ_FIFO_DIR = pathlib.PurePath("/tmp")
 
 # use feh instead of display for pillow .show()
 class FehViewer(ImageShow.UnixViewer):
@@ -56,7 +61,7 @@ def write_to_pipe(fifo_name, to_write):
     if not to_write.endswith("\n"):
         to_write += "\n"
     try:
-        output = subprocess.Popen(['socat', '-', "/tmp/"+fifo_name], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+        output = subprocess.Popen(['socat', '-', pathlib.PurePath(VIZAVIZ_FIFO_DIR, fifo_name)], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
         output.stdin.write(to_write.encode())
         ostdout = output.communicate()[0]
         output.stdin.close()
@@ -160,13 +165,13 @@ def audio_image_from_file(source, map_file_prefix=""):
     # 'spectrogram' should not be hardcoded
     print("generating spectrogram for {}".format(source))
     try:
-        map_file = 'map_image_spectrogram_{0}.jpg'.format(map_file_prefix)
-        processors_audio.spectrogram_image(source, image_filename=map_file)
+        map_file = pathlib.PurePath(VIZAVIZ_DATA_DIR, 'map_image_spectrogram_{0}.jpg'.format(map_file_prefix))
+        processors_audio.spectrogram_image(source, image_filename=str(map_file))
     except Exception as ex:
         print(ex)
 
 def images_to_db(map_file=None, map_file_prefix=""):
-    p = pathlib.Path(".")
+    p = pathlib.Path(VIZAVIZ_DATA_DIR)
     image_files = list(p.glob('map_image*.jpg'))
     for file in image_files:
         #map_image_spectrogram_11111
@@ -197,7 +202,7 @@ def frames_from_file(source, destination, frame_file_prefix=""):
 def colormap_from_frames(sources, map_file_prefix=""):
     created_map_files = []
     for resolution in COLORMAP_RESOLUTIONS:
-        map_file = '{0}_{1}.npy'.format(map_file_prefix, resolution)
+        map_file = pathlib.PurePath(VIZAVIZ_DATA_DIR, '{0}_{1}.npy'.format(map_file_prefix, resolution))
         created_map_files.append(map_file)
         if not os.path.isfile(map_file):
             print("creating colormap {0} for resolution: {1}".format(map_file_prefix, resolution))
@@ -212,8 +217,8 @@ def colormap_from_frames(sources, map_file_prefix=""):
                     for px, pixel in enumerate(rgb): 
                         rgb_array[imgslice][res][px] = pixel
 
-            np.save(map_file, rgb_array)
-            colormap_to_db(map_file, resolution, map_file_prefix)
+            np.save(str(map_file), rgb_array)
+            colormap_to_db(str(map_file), resolution, map_file_prefix)
     return created_map_files
 
 def colormap_to_db(map_file, resolution, map_file_prefix=""):
@@ -330,7 +335,7 @@ def visualize_map(map_file=None, map_raw=None, cell_width=10, cell_height=10, ro
 
 def file_already_processed(file_hash):
     for resolution in COLORMAP_RESOLUTIONS:
-        processed = "{file_hash}_{resolution}.npy".format(file_hash=file_hash, resolution=resolution)
+        processed = pathlib.PurePath(VIZAVIZ_DATA_DIR, "{file_hash}_{resolution}.npy".format(file_hash=file_hash, resolution=resolution))
         if not os.path.isfile(processed):
             return False
         else:
@@ -352,7 +357,7 @@ async def source_from(directory_name, directory_check_interval, processed_source
                 # if hash not found in dict, process
                 # process audio image
                 try:
-                    frames_from_file(file, "/tmp", frame_file_prefix=file_hash)
+                    frames_from_file(file, VIZAVIZ_TEMP_DIR, frame_file_prefix=file_hash)
                     processed_sources[file] = file_hash
                     redis_conn.hmset("source:{}".format(file_hash), {"filename" : file})
                     redis_conn.hmset("source:{}".format(file_hash), {"filehash" : file_hash})
@@ -365,7 +370,7 @@ async def source_from(directory_name, directory_check_interval, processed_source
                 # files exist...
                 # check if maps are in db
                 for resolution in COLORMAP_RESOLUTIONS:
-                    map_file = '{0}_{1}.npy'.format(file_hash, resolution)
+                    map_file = pathlib.PurePath(VIZAVIZ_DATA_DIR, '{0}_{1}.npy'.format(file_hash, resolution))
                     if os.path.isfile(map_file):
                         colormap_to_db(map_file, resolution, file_hash)
 
@@ -423,6 +428,12 @@ async def main(directories, redis_conn):
         # trio works with ctrl-c
         print(ex, "exiting...")
 
+def create_xdg_dirs():
+    for directory in (VIZAVIZ_DATA_DIR, VIZAVIZ_TEMP_DIR, VIZAVIZ_FIFO_DIR, VIZAVIZ_CONFIG_DIR):
+        if not os.path.isdir(directory):
+            print("{} does not exist, creating directory...")
+            os.mkdir(directory)
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--source-dir",
@@ -445,8 +456,26 @@ if __name__ == "__main__":
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", default=6379)
     parser.add_argument("--auth", default="")
+    parser.add_argument("--data-dir", default=VIZAVIZ_DATA_DIR)
+    parser.add_argument("--temp-dir", default=VIZAVIZ_TEMP_DIR)
+    parser.add_argument("--fifo-dir", default=VIZAVIZ_FIFO_DIR)
+    parser.add_argument("--config-dir", default=VIZAVIZ_CONFIG_DIR)
 
     args = parser.parse_args()
+
+    if args.data_dir != VIZAVIZ_DATA_DIR:
+        VIZAVIZ_DATA_DIR = args.data_dir
+
+    if args.temp_dir != VIZAVIZ_TEMP_DIR:
+        VIZAVIZ_TEMP_DIR = args.temp_dir
+
+    if args.config_dir != VIZAVIZ_CONFIG_DIR:
+        VIZAVIZ_CONFIG_DIR = args.config_dir
+
+    if args.fifo_dir != VIZAVIZ_FIFO_DIR:
+        VIZAVIZ_FIFO_DIR = args.fifo_dir
+
+    create_xdg_dirs()
 
     try:
         r_ip, r_port = args.host, args.port
