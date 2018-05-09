@@ -194,28 +194,45 @@ class LoopItem(BoxLayout):
             print(ex)
         self.is_expanded = False
 
-    def add_settings(self):
-        for setting_name, setting_value in self.settings.items():
-            setting_row = BoxLayout(orientation="horizontal", height=40)
-            if "loop_" in setting_name:
-                color = (0, 1, 0, 1)
-            else:
-                color = (1, 1, 1, 1)
-            setting_row.add_widget(Label(text=str(setting_name), color=color))
-            setting_value_label = Label(text=str(setting_value))
-            if (setting_name not in self.read_only_settings and not setting_name.startswith("loop_")) or (setting_name.startswith("loop_") and setting_name in self.whitelist_settings):
-                setting_input = TextInput(text=str(setting_value), multiline=False, height=40, size_hint_y=1)
-                setting_input.bind(on_text_validate = lambda widget, 
-                                                             setting_name=setting_name,
-                                                             setting_value_label=setting_value_label: 
-                                                             self.adjust_setting(setting_name, widget.text, setting_value_label))
-            else:
-                setting_input = Label(text=str(setting_value), color=(.5, .5, .5, 1))
-            
-            setting_row.add_widget(setting_input)
+    def set_settings(self):
+        for setting_row in self.settings_container.children:
+            if "_loop" in setting_row.setting:
+                print(" {} -> {}".format(setting_row.input, self.settings[setting_row.setting]))
+            setting_row.input = str(self.settings[setting_row.setting])
+            setting_row.value_label.text = str(self.settings[setting_row.setting])
 
-            setting_row.add_widget(setting_value_label)
-            self.settings_container.add_widget(setting_row)
+        # special case for thumbnail / header
+        if "loop_volume" in self.settings:
+            self.loop_volume.value = int(self.settings["loop_volume"])
+
+    def add_settings(self):
+        existing_settings = [setting_row.setting for setting_row in self.settings_container.children]
+        for setting_name, setting_value in self.settings.items():
+            if setting_name not in existing_settings:
+                setting_row = BoxLayout(orientation="horizontal", height=40)
+                if "loop_" in setting_name:
+                    color = (0, 1, 0, 1)
+                else:
+                    color = (1, 1, 1, 1)
+                setting_row.add_widget(Label(text=str(setting_name), color=color))
+                setting_value_label = Label(text=str(setting_value))
+                if (setting_name not in self.read_only_settings and not setting_name.startswith("loop_")) or (setting_name.startswith("loop_") and setting_name in self.whitelist_settings):
+                    setting_input = TextInput(text=str(setting_value), multiline=False, height=40, size_hint_y=1)
+                    setting_input.bind(on_text_validate = lambda widget,
+                                                                 setting_name=setting_name,
+                                                                 setting_value_label=setting_value_label:
+                                                                 self.adjust_setting(setting_name, widget.text, setting_value_label))
+                else:
+                    setting_input = Label(text=str(setting_value), color=(.5, .5, .5, 1))
+
+                setting_row.add_widget(setting_input)
+                # set for updating with set_settings
+                setting_row.input = setting_input
+                setting_row.value_label = setting_value_label
+                setting_row.setting = setting_name
+
+                setting_row.add_widget(setting_value_label)
+                self.settings_container.add_widget(setting_row)
 
     def update_loop_settings(self):
         for k,v in self.loop.items():
@@ -399,6 +416,16 @@ class LoopContainer(BoxLayout):
         self.app = app
         super(LoopContainer, self).__init__(**kwargs)
 
+    @property
+    def loop_ids(self):
+        l_ids = []
+        for loop in self.children:
+            try:
+                l_ids.append(loop.loop['uuid'])
+            except KeyError:
+                pass
+        return l_ids
+
     def clear_loops(self):
         for loop in self.children:
             self.remove_widget(loop)
@@ -431,6 +458,29 @@ class LoopContainer(BoxLayout):
                 pass
         self.draw_placeholder_grid()
 
+    def remove_loop_by_id(self, loop_id):
+        for loop in self.children:
+            try:
+                if loop.loop['uuid'] == loop_id:
+                    self.remove_widget(loop)
+            except KeyError as ex:
+                pass
+
+        self.draw_placeholder_grid()
+
+    def update_loop(self, loop_id, loop_dict):
+        for l in self.children:
+            try:
+                if loop_id == l.loop['uuid']:
+                    print("matches")
+                    l.loop.update(loop_dict)
+                    l.update_loop_settings()
+                    l.add_settings()
+                    l.set_settings()
+            except AttributeError as ex:
+                print(ex)
+                pass
+
     def unexpand_loops(self):
         for l in self.children:
             l.unexpand()
@@ -443,7 +493,7 @@ class LoopContainer(BoxLayout):
 
         if not self.children:
             with self.app.detailed.canvas:
-                #self.app.detailed.canvas.remove_group("viewgrid")
+                self.app.detailed.canvas.clear()
                 for y in range(0, int(placeholder_rows * placeholder_cell_height), placeholder_cell_height):
                     for x in range(0, int(placeholder_columns * placeholder_cell_width), placeholder_cell_width):
                         Color(1, 1, 1, .5)
@@ -656,16 +706,28 @@ class VzzGuiApp(App):
 
     def update_loops(self):
         print("updating loops....")
-        self.loop_container.clear_loops()
+        # self.loop_container.clear_loops()
+        updated_loops = set()
         for key in redis_conn.scan_iter("vizaviz:{server}:loop:*".format(server="*")):
             loop = redis_conn.hgetall(key)
-            print(loop)
+            updated_loops.add(loop['uuid'])
             # check if loop already added
             try:
                 if not self.loop_container.has_loop_by_id(loop['uuid']):
                     self.loop_container.add_loop(loop)
+                else:
+                    try:
+                        self.loop_container.update_loop(loop['uuid'], loop)
+                    except KeyError:
+                        pass
             except KeyError:
                 pass
+
+        # prune old loops
+        old_loops = set(self.loop_container.loop_ids) - set(updated_loops)
+        for loop_uuid in old_loops:
+            print("removing loop id {}".format(loop_uuid))
+            self.loop_container.remove_loop_by_id(loop_uuid)
 
     def update_sources(self):
         print("updating sources...")
@@ -926,7 +988,7 @@ class VzzGuiApp(App):
             print("update?",message)
             # need to change update_loops to update loops instead
             # of clear / recreate from db
-            #Clock.schedule_once(lambda dt: self.update_loops())
+            Clock.schedule_once(lambda dt: self.update_loops())
 
     def _keyboard_closed(self):
         # do not unbind the keyboard because
