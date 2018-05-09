@@ -429,10 +429,26 @@ class LoopContainer(BoxLayout):
                     self.remove_widget(loop)
             except AttributeError as ex:
                 pass
+        self.draw_placeholder_grid()
 
     def unexpand_loops(self):
         for l in self.children:
             l.unexpand()
+
+    def draw_placeholder_grid(self):
+        placeholder_cell_height = 10
+        placeholder_cell_width = 10
+        placeholder_rows = int(Window.height / placeholder_cell_height)
+        placeholder_columns = int((Window.width / placeholder_cell_width) / 2)
+
+        if not self.children:
+            with self.app.detailed.canvas:
+                #self.app.detailed.canvas.remove_group("viewgrid")
+                for y in range(0, int(placeholder_rows * placeholder_cell_height), placeholder_cell_height):
+                    for x in range(0, int(placeholder_columns * placeholder_cell_width), placeholder_cell_width):
+                        Color(1, 1, 1, .5)
+                        Ellipse(size=(2, 2), pos=(x, y), group="viewgrid")
+
 
 class ScatterTextWidget(BoxLayout):
     text_colour = ObjectProperty([1, 0, 0, 1])
@@ -841,6 +857,7 @@ class VzzGuiApp(App):
         loops_detailed = StencilBoxLayout(height=Window.height-40, width=Window.width-40, size_hint=(1,1)) #StencilView()
         self.loop_container = loops_layout
         self.detailed = loops_detailed
+        loops_layout.draw_placeholder_grid()
 
         self.group_container = ScatterTextWidget()
         self.group_container.scroller.app = self
