@@ -11,6 +11,7 @@ import subprocess
 import io
 import uuid
 import json
+from urllib.parse import urlparse
 import functools
 import hashlib
 import time
@@ -275,13 +276,17 @@ async def ingest(urls, destination_directory):
     history_key = "vizaviz:{server_name}:history".format(server_name=SERVER_ID)
     already_ingested = redis_conn.smembers(history_key)
     for url in urls:
-        if url not in already_ingested:
-            filename = subprocess.check_output(["youtube-dl", "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/mp4", url, "--get-filename"]).decode().strip()
-            if not os.path.isfile(pathlib.PurePosixPath(destination_directory, filename)):
-                subprocess.Popen(["youtube-dl", "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/mp4", url],
-                                cwd=destination_directory)
-            redis_conn.sadd(history_key, url)
-
+        valid_url = urlparse(url)
+        if valid_url.scheme and  valid_url.netloc and valid_url.path:
+            print("url valid: {}".format(valid_url))
+            if valid_url not in already_ingested:
+                filename = subprocess.check_output(["youtube-dl", "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/mp4", valid_url, "--get-filename"]).decode().strip()
+                if not os.path.isfile(pathlib.PurePosixPath(destination_directory, filename)):
+                    subprocess.Popen(["youtube-dl", "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/mp4", valid_url],
+                                    cwd=destination_directory)
+                redis_conn.sadd(history_key, valid_url)
+        else:
+            print("url not valid: {}".format(valid_url))
 #@functools.lru_cache(maxsize=32)
 def visualize_map(map_file=None, map_raw=None, cell_width=10, cell_height=10, rows=None, columns=None, resolution=None, return_image=False, return_format="PNG", reverse_image=False):
     if map_file:
