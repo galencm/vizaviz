@@ -205,6 +205,10 @@ class LoopItem(BoxLayout):
         if "loop_volume" in self.settings:
             self.loop_volume.value = int(self.settings["loop_volume"])
 
+        # if loop has changed, redraw region thumbnail
+        if self.loop_loop_thumb.loop_start != self.settings["loop_start"] or self.loop_loop_thumb.loop_end != self.settings["loop_end"]:
+            self.loop_loop_image(height=22)
+
     def add_settings(self):
         existing_settings = [setting_row.setting for setting_row in self.settings_container.children]
         for setting_name, setting_value in self.settings.items():
@@ -269,6 +273,8 @@ class LoopItem(BoxLayout):
                                        return_format="JPEG",
                                        return_image=True)
                 img = self.loop_loop_thumb
+                img.loop_start = self.settings["loop_start"]
+                img.loop_end = self.settings["loop_end"]
                 img.resolution = resolution
 
                 img.allow_stretch = True
