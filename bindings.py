@@ -11,6 +11,7 @@ def keybindings():
     actions["app"]["app_exit"] = [["c"], ["ctrl"]]
     actions["app"]["tab_next"] = [["left"], ["ctrl"]]
     actions["app"]["tab_previous"] = [["right"], ["ctrl"]]
+    actions["app"]["ingest"] = [["i"], ["ctrl"]]
     # tabs have different actions / bindings
     # handled if tab is currently active / visible
     # maps

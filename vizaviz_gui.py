@@ -30,6 +30,7 @@ from kivy.uix.textinput import TextInput
 from kivy.uix.image import Image
 from kivy.uix.button import Button
 from kivy.uix.dropdown import DropDown
+from kivy.uix.popup import Popup
 from kivy.uix.slider import Slider
 from kivy.core.image import Image as CoreImage
 from kivy.uix.scatter import Scatter
@@ -63,6 +64,24 @@ kv = """
 """
 
 Builder.load_string(kv)
+
+class IngestContainer(BoxLayout):
+    def __init__(self, **kwargs):
+        ingest_url_input = TextInput(text="", multiline=False, height=40, size_hint_y=1)
+        ingest_url_input.bind(on_text_validate=lambda widget: self.request_ingest(widget.text))
+        super(IngestContainer, self).__init__()
+        self.add_widget(ingest_url_input)
+
+    def request_ingest(self, url):
+        if url:
+            redis_conn.sadd("vizaviz:{server_name}:ingest".format(server_name="any"), url)
+
+class IngestPopUp(Popup):
+    def __init__(self, **kwargs):
+        self.title = "ingest"
+        self.content = IngestContainer()
+        self.size_hint = (.5,.5)
+        super(IngestPopUp, self).__init__()
 
 class StencilBoxLayout(BoxLayout, StencilView):
     pass
@@ -794,6 +813,11 @@ class VzzGuiApp(App):
             name = trace_key.partition("focus:")[-1]
             with self.group_container.canvas:
                 self.group_container.canvas.remove_group(name)
+
+    def ingest(self,*args):
+        ingest_popup = IngestPopUp()
+        print(ingest_popup)
+        ingest_popup.open()
 
     def on_stop(self):
         # stop pubsub thread if window closed with '[x]'
