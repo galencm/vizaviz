@@ -645,6 +645,10 @@ class ScrollViewer(ScrollView):
             #print(child, child.size)
             child.width *= zoom_amount
             child.height *= zoom_amount
+            try:
+                child.redraw_overlays()
+            except Exception as ex:
+                pass
         self.leave_trace()
 
     def shrink(self, zoom_amount=2):
@@ -653,6 +657,10 @@ class ScrollViewer(ScrollView):
             #print(child, child.size)
             child.width /= zoom_amount
             child.height /= zoom_amount
+            try:
+                child.redraw_overlays()
+            except Exception as ex:
+                pass
         self.leave_trace()
 
     def on_touch_down(self, touch):
@@ -774,11 +782,24 @@ class VzzGuiApp(App):
             except KeyError:
                 pass
 
+            # draw loop regions on maps
+            for widget in self.group_container.image_grid.children:
+                if isinstance(widget, ClickableSourceImage):
+                    if widget.filehash == loop['filehash']:
+                        start = int(loop['start'])
+                        end = int(loop['end'])
+                        widget.draw_overlay(loop['filehash'], start, end, loop['uuid'])
+
         # prune old loops
         old_loops = set(self.loop_container.loop_ids) - set(updated_loops)
         for loop_uuid in old_loops:
             print("removing loop id {}".format(loop_uuid))
             self.loop_container.remove_loop_by_id(loop_uuid)
+            for widget in self.group_container.image_grid.children:
+                try:
+                    widget.remove_overlay(loop_uuid)
+                except:
+                    pass
 
     def update_sources(self):
         print("updating sources...")
@@ -1195,6 +1216,9 @@ class VzzGuiApp(App):
 class ClickableSourceImage(Image):
     def __init__(self, app, **kwargs):
         self.app = app
+        self.default_cell_height = 10
+        self.default_cell_width = 10
+        self.overlays = {}
         super(ClickableSourceImage, self).__init__(**kwargs)
 
     # def on_touch_down(self, touch):
@@ -1202,6 +1226,47 @@ class ClickableSourceImage(Image):
     #         if self.collide_point(touch.pos[0], touch.pos[1]):
     #             pass
     #     return super().on_touch_down(touch)
+
+    def remove_overlay(self, overlay_key):
+        try:
+            del self.overlays[overlay_key]
+            with self.canvas:
+                self.canvas.remove_group(overlay_key)
+        except KeyError:
+            pass
+        self.redraw_overlays()
+
+    def redraw_overlays(self):
+        for _, overlay in self.overlays.items():
+            self.draw_loop(*overlay)
+
+    @property
+    def width_scaled(self):
+        return self.texture_size[0] / self.norm_image_size[0]
+
+    @property
+    def height_scaled(self):
+        return self.texture_size[1] / self.norm_image_size[1]
+
+    @property
+    def width_offset(self):
+        return (self.size[0] - self.norm_image_size[0]) / 2
+
+    def draw_overlay(self, filehash, start, end, uuid=None):
+        # x not correct when shrinking / enlarging except at scale 2.0
+        # on startup of gui, x coordinates are not correct
+        # left click in loop region to open loops tab with loop?
+        self.overlays[uuid] = (filehash, start, end, uuid)
+        start = (start * self.default_cell_height ) / self.height_scaled
+        end = (end * self.default_cell_height ) / self.height_scaled
+        x = self.x / self.width_scaled
+        y = start + (self.y * self.height_scaled)
+        w = self.width #
+        h = end - start
+        with self.canvas:
+            self.canvas.remove_group(uuid)
+            Color(1, 1, 1, 0.5)
+            Line(rectangle=(x, y, w, h), fill=(0, 0, 0, 0), width=3, group=uuid)
 
     def on_touch_up(self, touch):
 
