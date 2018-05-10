@@ -83,6 +83,51 @@ class IngestPopUp(Popup):
         self.size_hint = (.5,.5)
         super(IngestPopUp, self).__init__()
 
+class BindingsContainer(BoxLayout):
+    def __init__(self, actions, **kwargs):
+        self.actions = actions
+        super(BindingsContainer, self).__init__()
+
+    def setup_bindings(self):
+        actions = 0
+        for domain, domain_actions in self.actions.items():
+            self.add_widget(Label(text=str(domain), height=40))
+            for action, action_bindings in domain_actions.items():
+                binding_widget = BindingItem(domain, action, action_bindings, self.actions, height=40)
+                self.add_widget(binding_widget)
+                actions += 1
+        self.height = actions * 40
+
+class BindingItem(BoxLayout):
+    def __init__(self, domain, action, action_keybindings, actions, **kwargs):
+        # self.rows = 1
+        # self.cols = None
+        self.orientation = "horizontal"
+        self.keys = action_keybindings[0]
+        self.modifiers = action_keybindings[1]
+        self.domain = domain
+        self.action = action
+        self.actions = actions
+        self.action_label = Label(text=str(self.action), height=40)
+        self.keys_input = TextInput(text=str(",".join(self.keys)), multiline=False, height=40, size_hint_x=0.2)
+        self.keys_input.bind(on_text_validate = lambda widget: self.set_binding())
+        self.modifiers_input = TextInput(text=str(",".join(self.modifiers)), multiline=False, height=40, size_hint_x=0.2)
+        self.modifiers_input.bind(on_text_validate = lambda widget: self.set_binding())
+        super(BindingItem, self).__init__()
+        self.add_widget(self.action_label)
+        self.add_widget(self.keys_input)
+        self.add_widget(self.modifiers_input)
+
+    def set_binding(self):
+        self.keys = self.parse_input(self.keys_input.text)
+        self.modifiers= self.parse_input(self.modifiers_input.text)
+        self.actions[self.domain][self.action] = [self.keys, self.modifiers]
+
+    def parse_input(self, text):
+        text = text.strip()
+        text = text.replace(" ", "")
+        return text.split(",")
+
 class StencilBoxLayout(BoxLayout, StencilView):
     pass
 
@@ -945,8 +990,29 @@ class VzzGuiApp(App):
 
         # if size is set to full window, will cover tabs
         tab_height = 40
-        self.group_container.scroller.size = (Window.width, Window.height- tab_height)
+        self.group_container.scroller.size = (Window.width, Window.height - tab_height)
         self.group_container.scroller.size_hint = (None, None)
+
+        # for now
+        # create bindings_container as boxlayout
+        # instead of class BindingsContainer(BoxLayout)
+        # since settings do not seem to be correctly set
+        # in order to work with scrollview
+        bindings_container = BoxLayout(orientation="vertical",
+                                       size_hint_y=None,
+                                       )
+
+        actions = 0
+        for domain, domain_actions in self.actions.items():
+            bindings_container.add_widget(Label(text=str(domain), height=40))
+            for action, action_bindings in domain_actions.items():
+                binding_widget = BindingItem(domain, action, action_bindings, self.actions, height=40)
+                bindings_container.add_widget(binding_widget)
+                actions += 1
+        # set height for scrollview
+        bindings_container.height = actions * 40
+        bindings_scroll = ScrollView(bar_width=20)
+        bindings_scroll.add_widget(bindings_container)
 
         # add tabs
         tab = TabItem(text="maps",root=root)
@@ -964,8 +1030,13 @@ class VzzGuiApp(App):
         tab.add_widget(t)
         root.add_widget(tab)
 
+        tab = TabItem(text="bindings",root=root)
+        tab.tab_name = "bindings"
+        tab.add_widget(bindings_scroll)
+        root.add_widget(tab)
+
         #root.add_widget(loops_scroll)
-        root.add_widget(self.group_container)
+        #root.add_widget(self.group_container)
 
         self.db_event_subscription = redis_conn.pubsub()
         self.db_event_subscription.psubscribe(**{'__keyspace@0__:*': self.handle_db_events})
@@ -1053,35 +1124,15 @@ class VzzGuiApp(App):
 
     def _on_keyboard_down(self, keyboard, keycode, text, modifiers):
         for actions in ["app", self.root.current_tab.tab_name]:
-            for k, v in self.actions[actions].items():
-                if keycode[1] in v[0] and not v[1] and not modifiers:
-                    try:
-                        getattr(self, "{}".format(k))()
-                    except Exception as ex:
-                        #print(ex)
-                        pass
-                    # use .content.children for tabs
-                    for c in self.root.current_tab.content.children:
-                        try:
-                            getattr(c, "{}".format(k))()
-                        except Exception as ex:
-                            print(ex)
-
-                    for lower_widget in self.root.current_tab.sub_content:
-                        for c in lower_widget.children:
-                            try:
-                                getattr(c, "{}".format(k))()
-                            except Exception as ex:
-                                print(ex)
-
-                elif keycode[1] in v[0] and modifiers:
-                    if len(set(v[1]).intersection(set(modifiers))) == len(modifiers):
+            try:
+                for k, v in self.actions[actions].items():
+                    if keycode[1] in v[0] and not v[1] and not modifiers:
                         try:
                             getattr(self, "{}".format(k))()
                         except Exception as ex:
-                            # print(ex)
+                            #print(ex)
                             pass
-
+                        # use .content.children for tabs
                         for c in self.root.current_tab.content.children:
                             try:
                                 getattr(c, "{}".format(k))()
@@ -1094,6 +1145,29 @@ class VzzGuiApp(App):
                                     getattr(c, "{}".format(k))()
                                 except Exception as ex:
                                     print(ex)
+
+                    elif keycode[1] in v[0] and modifiers:
+                        if len(set(v[1]).intersection(set(modifiers))) == len(modifiers):
+                            try:
+                                getattr(self, "{}".format(k))()
+                            except Exception as ex:
+                                # print(ex)
+                                pass
+
+                            for c in self.root.current_tab.content.children:
+                                try:
+                                    getattr(c, "{}".format(k))()
+                                except Exception as ex:
+                                    print(ex)
+
+                            for lower_widget in self.root.current_tab.sub_content:
+                                for c in lower_widget.children:
+                                    try:
+                                        getattr(c, "{}".format(k))()
+                                    except Exception as ex:
+                                        print(ex)
+            except KeyError:
+                pass
 
     def app_exit(self):
         self.db_event_subscription.thread.stop()
