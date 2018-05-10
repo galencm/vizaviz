@@ -375,7 +375,7 @@ class LoopItem(BoxLayout):
                     try:
                         r,g,b = [z.pop(0) for idx in range(3)]
                         current_frame = math.ceil(cell / resolution)
-                        print(current_frame, start, end, cell)
+                        # print(current_frame, start, end, cell)
                         r /= 255
                         g /= 255
                         b /= 255
