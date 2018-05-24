@@ -219,6 +219,7 @@ def colormap_from_frames(sources, map_file_prefix=""):
                         rgb_array[imgslice][res][px] = pixel
 
             np.save(str(map_file), rgb_array)
+            print("saving colormap to {}".format(map_file))
             colormap_to_db(str(map_file), resolution, map_file_prefix)
     return created_map_files
 
@@ -471,7 +472,7 @@ async def main(directories, redis_conn):
 def create_xdg_dirs():
     for directory in (VIZAVIZ_DATA_DIR, VIZAVIZ_TEMP_DIR, VIZAVIZ_FIFO_DIR, VIZAVIZ_CONFIG_DIR):
         if not os.path.isdir(directory):
-            print("{} does not exist, creating directory...")
+            print("{} does not exist, creating directory...".format(directory))
             os.mkdir(directory)
 
 if __name__ == "__main__":
